@@ -1,0 +1,229 @@
+/* استایل ساده و تمیز — بدون انیمیشن و بدون فریم‌ورک */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0 0 40px;
+  background: #f4f6f8;
+  color: #1f2933;
+  font-family: Tahoma, "Segoe UI", Arial, sans-serif;
+  line-height: 1.9;
+}
+
+.site-header {
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 24px 20px;
+  text-align: center;
+}
+
+.site-header h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.subtitle {
+  margin: 0;
+  color: #52606d;
+  font-size: 14px;
+}
+
+.layout {
+  max-width: 820px;
+  margin: 24px auto;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.card-title {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.card-subtitle {
+  margin: 20px 0 8px;
+  font-size: 15px;
+  color: #334e68;
+}
+
+.label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.input {
+  flex: 1 1 260px;
+  padding: 10px 12px;
+  border: 1px solid #cbd2d9;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 15px;
+}
+
+.input:focus {
+  outline: 2px solid #2f80ed;
+  border-color: #2f80ed;
+}
+
+.btn {
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #2f80ed;
+  color: #ffffff;
+}
+
+.btn-secondary {
+  background: #eef4fd;
+  color: #1a56a0;
+  border-color: #c6dbf7;
+  margin-top: 12px;
+}
+
+.steps {
+  margin: 0;
+  padding-inline-start: 22px;
+}
+
+.steps li {
+  margin-bottom: 8px;
+}
+
+.step-status {
+  font-size: 13px;
+  color: #7b8794;
+}
+
+.step-detail {
+  display: block;
+  font-size: 13px;
+  color: #52606d;
+  word-break: break-word;
+}
+
+/* وضعیت‌های مرحله */
+.step-running .step-title {
+  font-weight: bold;
+  color: #1a56a0;
+}
+
+.step-done .step-title {
+  color: #1f7a4d;
+}
+
+.step-skipped .step-title {
+  color: #8a6116;
+}
+
+.step-error .step-title {
+  color: #b42318;
+}
+
+.alert {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.alert-error {
+  background: #fdecea;
+  border: 1px solid #f5c6c2;
+  color: #b42318;
+}
+
+.summary {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.sources {
+  margin: 0;
+  padding-inline-start: 22px;
+}
+
+.sources li {
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+
+.sources a {
+  color: #1a56a0;
+}
+
+.path {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  background: #f0f4f8;
+  border: 1px dashed #bcccdc;
+  border-radius: 8px;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  direction: ltr;
+  text-align: left;
+  word-break: break-all;
+}
+
+.article-box {
+  margin-top: 16px;
+}
+
+.article-box summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: #334e68;
+}
+
+.article {
+  margin: 12px 0 0;
+  padding: 12px;
+  background: #fbfcfe;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.site-footer {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 0 16px;
+  color: #7b8794;
+  font-size: 12px;
+  text-align: center;
+}

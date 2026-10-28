@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<!-- صفحه ساده چت‌مانند دستیار پژوهشی -->
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>دستیار پژوهشی هوشمند</title>
+    <!-- مسیر مطلق برای فایل استایل (صفحه از ریشه یعنی / سرو می‌شود) -->
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <h1>دستیار پژوهشی هوشمند</h1>
+      <p class="subtitle">
+        موضوع پژوهش را وارد کن؛ مدل هوش مصنوعی خودش تشخیص می‌دهد که برای جمع‌آوری اطلاعات به ابزار
+        جست‌وجوی اینترنت نیاز دارد یا نه.
+      </p>
+    </header>
+
+    <main class="layout">
+      <!-- ۱) ورودی موضوع پژوهش -->
+      <section class="card">
+        <label class="label" for="topic">موضوع پژوهش</label>
+        <div class="row">
+          <input
+            id="topic"
+            class="input"
+            type="text"
+            placeholder="مثال: کاربرد هوش مصنوعی در پزشکی"
+            autocomplete="off"
+          />
+          <button id="startBtn" class="btn btn-primary" type="button">شروع پژوهش</button>
+        </div>
+        <p id="errorBox" class="alert alert-error" hidden></p>
+      </section>
+
+      <!-- ۲) نمایش مراحل کار -->
+      <section class="card">
+        <h2 class="card-title">مراحل کار</h2>
+        <ol id="steps" class="steps"></ol>
+      </section>
+
+      <!-- ۳) خلاصه پاسخ، منابع و مسیر فایل -->
+      <section class="card" id="resultCard" hidden>
+        <h2 class="card-title">خلاصه پاسخ</h2>
+        <p id="summary" class="summary"></p>
+
+        <h3 class="card-subtitle">منابع و لینک‌ها</h3>
+        <ul id="sources" class="sources"></ul>
+
+        <button id="pathBtn" class="btn btn-secondary" type="button">مشاهده مسیر فایل مقاله</button>
+        <p id="filePath" class="path" hidden></p>
+
+        <details class="article-box">
+          <summary>متن کامل مقاله (Markdown)</summary>
+          <pre id="article" class="article"></pre>
+        </details>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      ساخته‌شده برای یادگیری Function Calling و Tool Calling — مدل تصمیم می‌گیرد، بک‌اند پایتون ابزار را اجرا می‌کند.
+    </footer>
+
+    <!-- مسیر مطلق برای فایل جاوااسکریپت (صفحه از ریشه یعنی / سرو می‌شود) -->
+    <script src="/static/script.js"></script>
+  </body>
+</html>

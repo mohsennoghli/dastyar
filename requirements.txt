@@ -1,0 +1,8 @@
+# وابستگی‌های پروژه دستیار پژوهشی هوشمند
+# نصب: python -m pip install -r requirements.txt
+
+fastapi==0.162.0        # ساخت API
+uvicorn==0.54.0         # اجرای سرور
+openai==3.37.0          # ارتباط با مدل سازگار با OpenAI (شامل پشتیبانی tools / tool_calls)
+python-dotenv==1.2.4    # خواندن تنظیمات از فایل .env
+requests==2.34.2        # تماس با سرویس جست‌وجوی اینترنت
