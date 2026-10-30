@@ -1,0 +1,2 @@
+INFO:     127.0.0.1:58259 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58260 - "GET /api/research/stream?topic=%D9%87%D9%88%D8%B4%20%D9%85%D8%B5%D9%86%D9%88%D8%B9%DB%8C HTTP/1.1" 200 OK

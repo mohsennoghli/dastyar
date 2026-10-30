@@ -1,0 +1,9 @@
+INFO:     Started server process [13608]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8011 (Press CTRL+C to quit)
+2026-10-30 17:17:04,387 | INFO | HTTP Request: POST https://tokenharbor.ai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-30 17:17:04,430 | INFO | search_web → provider=wikipedia query='هوش مصنوعی تعریف تاریخچه کاربردها'
+2026-10-30 17:17:06,814 | INFO | search_web → provider=wikipedia query='artificial intelligence definition history applications'
+2026-10-30 17:17:07,818 | INFO | search_web → provider=wikipedia query='هوش مصنوعی مولد چالش\u200cها اخلاقیات ۲۰۲۴'
+2026-10-30 17:17:08,937 | INFO | search_web → provider=wikipedia query='کاربرد هوش مصنوعی در پزشکی و آموزش'

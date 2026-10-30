@@ -478,13 +478,17 @@ async def _ask_model(client: AsyncOpenAI, messages: list[dict[str, Any]], with_t
     اگر with_tools=True باشد، تعریف ابزار search_web هم فرستاده می‌شود؛
     یعنی مدل «می‌فهمد» چنین ابزاری در اختیار دارد و می‌تواند درخواست اجرایش را بدهد.
     """
+    # نکته مهم: وقتی نمیخواهیم ابزاری معرفی شود، کلید «tools» باید کاملاً
+    # فرستاده نشود، نه با مقدار None. کتابخانه openai مقدار None را بهصورت
+    # «"tools": null» در بدنه JSON میگذارد و برخی سرویسهای سازگار با OpenAI
+    # (مثل TokenHarbor) همین null را «درخواست نامعتبر» میدانند و خطای 400 میدهند.
+    request_kwargs: dict[str, Any] = {"model": OPENAI_MODEL, "messages": messages}
+    if with_tools:
+        request_kwargs["tools"] = [SEARCH_WEB_TOOL]  # ← معرفی ابزار به مدل
+        request_kwargs["tool_choice"] = "auto"       # ← مدل خودش تصمیم میگیرد
+
     try:
-        return await client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=messages,
-            tools=[SEARCH_WEB_TOOL] if with_tools else None,  # ← معرفی ابزار به مدل
-            tool_choice="auto" if with_tools else None,       # ← مدل خودش تصمیم می‌گیرد
-        )
+        return await client.chat.completions.create(**request_kwargs)
     except Exception as exc:  # خطای شبکه، کلید نامعتبر، مدل اشتباه و ...
         logger.exception("خطا در ارتباط با مدل هوش مصنوعی")
         raise ResearchError(_model_error_message(exc)) from exc
