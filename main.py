@@ -8,7 +8,7 @@
   ۲) تعریف ابزار search_web (JSON Schema) به مدل معرفی می‌شود.
   ۳) مدل درخواست فراخوانی ابزار (tool_calls) برمی‌گرداند.
   ۴) بک‌اند آرگومان ابزار را می‌خواند و تابع واقعی پایتون (search_web) را اجرا می‌کند.
-  ۵) نتیجه ابزار با قالب role="tool" به مدل برگردانده می‌شود.
+  ۵) نتایج جست‌وجو با Compaction فشرده و سپس با قالب role="tool" به مدل برگردانده می‌شوند.
   ۶) مدل مقاله فارسی را تولید می‌کند.
   ۷) مقاله در پوشه research_notes با UTF-8 ذخیره و مسیر آن برگردانده می‌شود.
 
@@ -331,6 +331,37 @@ def _parse_tool_arguments(raw_arguments: str) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def compact_search_results(
+    results: list[dict[str, str]],
+    max_results: int = 3,
+    snippet_limit: int = 250,
+) -> list[dict[str, str]]:
+    """فشرده‌سازی نتایج جست‌وجو پیش از ارسال به مدل (Compaction آموزشی).
+
+    فقط سه نتیجه اول را نگه می‌داریم، عنوان را کوتاه می‌کنیم و متن هر خلاصه
+    را به حداکثر ۲۵۰ نویسه می‌رسانیم. عنوان و URL حفظ می‌شوند تا مدل بتواند
+    منبع را بشناسد. این کار خلاصه‌سازی هوشمند با مدل نیست؛ کاهش ساده حجم Context است.
+    """
+    compacted: list[dict[str, str]] = []
+
+    for result in results[:max_results]:
+        compacted.append(
+            {
+                "title": (result.get("title") or "")[:120],
+                "url": result.get("url") or "",
+                "snippet": (result.get("snippet") or "")[:snippet_limit],
+            }
+        )
+
+    original_chars = sum(len(json.dumps(item, ensure_ascii=False)) for item in results)
+    compact_chars = sum(len(json.dumps(item, ensure_ascii=False)) for item in compacted)
+    logger.info(
+        "Compaction: %s نتیجه و %s نویسه → %s نتیجه و %s نویسه",
+        len(results), original_chars, len(compacted), compact_chars,
+    )
+    return compacted
+
+
 def _unique_sources(sources: list[dict[str, str]]) -> list[dict[str, str]]:
     """حذف منابع تکراری بر اساس لینک."""
     seen: set[str] = set()
@@ -547,15 +578,24 @@ async def run_research(topic: str) -> AsyncIterator[dict[str, Any]]:
             except ResearchError as exc:
                 yield _step("search", ERROR, str(exc))
                 raise
+            # منابع کامل را برای نمایش و ذخیره مقاله نگه می‌داریم.
             sources.extend(results)
-            yield _step("search", DONE, f"{len(results)} نتیجه واقعی دریافت شد")
 
-            # نتیجه ابزار با نقش tool و همان tool_call_id به مکالمه برگردانده می‌شود
+            # Compaction: قبل از ارسال نتیجه به مدل، Context را کوچک می‌کنیم.
+            compact_results = compact_search_results(results)
+            yield _step(
+                "search", DONE,
+                f"{len(results)} نتیجه دریافت شد؛ {len(compact_results)} نتیجه فشرده به مدل می‌رود",
+            )
+
+            # فقط نسخه فشرده با نقش tool به تاریخچه مکالمه اضافه می‌شود.
             messages.append(
                 {
                     "role": "tool",
                     "tool_call_id": call.id,
-                    "content": json.dumps({"query": query, "results": results}, ensure_ascii=False),
+                    "content": json.dumps(
+                        {"query": query, "results": compact_results}, ensure_ascii=False
+                    ),
                 }
             )
 
