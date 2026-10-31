@@ -8,7 +8,8 @@
   ۲) تعریف ابزار search_web (JSON Schema) به مدل معرفی می‌شود.
   ۳) مدل درخواست فراخوانی ابزار (tool_calls) برمی‌گرداند.
   ۴) بک‌اند آرگومان ابزار را می‌خواند و تابع واقعی پایتون (search_web) را اجرا می‌کند.
-  ۵) نتایج جست‌وجو با Compaction فشرده و سپس با قالب role="tool" به مدل برگردانده می‌شوند.
+  ۵) نتایج جست‌وجو با Compaction (پنجره لغزان / Sliding Window) فشرده و سپس با قالب
+     نقش ابزار (role=tool) به مدل برگردانده می‌شوند.
   ۶) مدل مقاله فارسی را تولید می‌کند.
   ۷) مقاله در پوشه research_notes با UTF-8 ذخیره و مسیر آن برگردانده می‌شود.
 
@@ -101,6 +102,28 @@ def _env_float(name: str, default: float) -> float:
 
 SEARCH_MAX_RESULTS = _env_int("SEARCH_MAX_RESULTS", 5)
 SEARCH_TIMEOUT = _env_float("SEARCH_TIMEOUT", 25.0)
+# ---------- فشرده‌سازی Context (Compaction) ----------
+# پیش از فرستادن نتایج جست‌وجو به مدل، Context را کوچک می‌کنیم تا حجم درخواست
+# پایین بماند. راهبرد پیش‌فرض «پنجره لغزان» (Sliding Window) است:
+# پنجره روی تازه‌ترین نتایج می‌نشیند و اگر حجم از سقف بگذرد، لبه‌ی قدیمی
+# پنجره یک قدم جلو می‌آید و قدیمی‌ترین نتیجه بیرون می‌افتد.
+#   sliding  = پنجره لغزان روی تازه‌ترین نتایج (پیش‌فرض)
+#   truncate = رفتار ساده‌ی قبلی: فقط N نتیجه‌ی اول می‌ماند
+COMPACTION_STRATEGY = (os.getenv("COMPACTION_STRATEGY") or "sliding").strip().lower()
+
+# اندازه‌ی پنجره: بیشترین تعداد نتایجی که در Context می‌ماند
+COMPACTION_WINDOW = _env_int("COMPACTION_WINDOW", 3)
+
+# بیشترین نویسه‌ی «خلاصه» هر نتیجه (عنوان و لینک کامل حفظ می‌شوند)
+COMPACTION_SNIPPET_LIMIT = _env_int("COMPACTION_SNIPPET_LIMIT", 250)
+
+# سقف نویسه‌ی مجموع نتایج هر پیام tool؛ پنجره تا رعایت شدن این سقف می‌لغزد
+COMPACTION_MAX_CHARS = _env_int("COMPACTION_MAX_CHARS", 1500)
+
+# سقف نویسه‌ی تاریخچه‌ی مکالمه («پنجره لغزان» روی پیام‌ها) و کمترین شمار
+# پیام‌های آخری که در هر حالت نگه داشته می‌شوند
+COMPACTION_HISTORY_MAX_CHARS = _env_int("COMPACTION_HISTORY_MAX_CHARS", 8000)
+COMPACTION_HISTORY_MIN_MESSAGES = _env_int("COMPACTION_HISTORY_MIN_MESSAGES", 4)
 
 # ---------- مهلتهای تماس با مدل ----------
 # نکته مهم: کلاینت openai بهصورت پیشفرض فقط ۵ ثانیه برای «برقراری اتصال» مهلت
@@ -331,35 +354,144 @@ def _parse_tool_arguments(raw_arguments: str) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _json_chars(items: list[dict[str, Any]]) -> int:
+    """حجم تقریبی یک لیست JSON به نویسه — معیار ساده برای اندازه‌گیری Context."""
+    return sum(len(json.dumps(item, ensure_ascii=False)) for item in items)
+
+
+def _compact_search_result(result: dict[str, str], snippet_limit: int) -> dict[str, str]:
+    """کوتاه‌کردن عنوان و خلاصه‌ی یک نتیجه؛ لینک کامل می‌ماند تا منبع شناخته شود."""
+    return {
+        "title": (result.get("title") or "")[:120],
+        "url": result.get("url") or "",
+        "snippet": (result.get("snippet") or "")[:snippet_limit],
+    }
+
+
 def compact_search_results(
     results: list[dict[str, str]],
-    max_results: int = 3,
-    snippet_limit: int = 250,
+    window: int = COMPACTION_WINDOW,
+    snippet_limit: int = COMPACTION_SNIPPET_LIMIT,
+    max_chars: int = COMPACTION_MAX_CHARS,
+    strategy: str = COMPACTION_STRATEGY,
 ) -> list[dict[str, str]]:
-    """فشرده‌سازی نتایج جست‌وجو پیش از ارسال به مدل (Compaction آموزشی).
+    """فشرده‌سازی نتایج جست‌وجو با «پنجره لغزان» پیش از ارسال به مدل (Compaction آموزشی).
 
-    فقط سه نتیجه اول را نگه می‌داریم، عنوان را کوتاه می‌کنیم و متن هر خلاصه
-    را به حداکثر ۲۵۰ نویسه می‌رسانیم. عنوان و URL حفظ می‌شوند تا مدل بتواند
-    منبع را بشناسد. این کار خلاصه‌سازی هوشمند با مدل نیست؛ کاهش ساده حجم Context است.
+    ایده‌ی «پنجره لغزان» (Sliding Window) دو بخش دارد:
+
+      ۱) پنجره از تازه‌ترین نتایج شروع می‌شود: results[-window:]
+         (برخلاف راهبرد قبلی که همیشه N نتیجه‌ی اول را نگه می‌داشت، اینجا
+         Context قدیمی‌ترین نتایج را کنار می‌گذارد و اطلاعات تازه را می‌نگرد.)
+      ۲) اگر مجموع نویسه‌ها از سقف max_chars بگذرد، پنجره یک قدم می‌لغزد و
+         قدیمی‌ترین نتیجه‌ی داخل پنجره بیرون می‌افتد؛ این لغزش تا رعایت شدن
+         سقف (و دست‌کم ماندن یک نتیجه) تکرار می‌شود.
+
+    با strategy="truncate" رفتار ساده‌ی قبلی برمی‌گردد: فقط N نتیجه‌ی اول می‌ماند.
+    عنوان و لینک حفظ می‌شوند تا مدل منبع را بشناسد؛ این کار خلاصه‌سازی هوشمند
+    با مدل نیست، کاهش ساده‌ی حجم Context است.
     """
-    compacted: list[dict[str, str]] = []
-
-    for result in results[:max_results]:
-        compacted.append(
-            {
-                "title": (result.get("title") or "")[:120],
-                "url": result.get("url") or "",
-                "snippet": (result.get("snippet") or "")[:snippet_limit],
-            }
+    strategy = (strategy or "sliding").strip().lower()
+    if strategy not in ("sliding", "truncate", "prefix"):
+        logger.warning(
+            "راهبرد فشرده‌سازی ناشناخته (%r)؛ راهبرد «sliding» استفاده می‌شود.", strategy
         )
+        strategy = "sliding"
+    sliding = strategy == "sliding"
 
-    original_chars = sum(len(json.dumps(item, ensure_ascii=False)) for item in results)
-    compact_chars = sum(len(json.dumps(item, ensure_ascii=False)) for item in compacted)
+    window = max(int(window), 1)
+    snippet_limit = max(int(snippet_limit), 0)
+    original_chars = _json_chars(results)
+
+    # ۱) انتخاب پنجره‌ی اولیه: در راهبرد لغزان تازه‌ترین نتایج، وگرنه نتیجه‌های اول فهرست
+    windowed = results[-window:] if sliding else results[:window]
+    compacted = [_compact_search_result(item, snippet_limit) for item in windowed]
+    dropped = len(results) - len(compacted)
+
+    # ۲) لغزش پنجره تا رعایت شدن سقف نویسه (دست‌کم یک نتیجه همیشه می‌ماند)
+    while len(compacted) > 1 and _json_chars(compacted) > max_chars:
+        compacted.pop(0 if sliding else -1)
+        dropped += 1
+
+    compact_chars = _json_chars(compacted)
     logger.info(
-        "Compaction: %s نتیجه و %s نویسه → %s نتیجه و %s نویسه",
-        len(results), original_chars, len(compacted), compact_chars,
+        "Compaction (strategy=%s): %s نتیجه و %s نویسه → پنجره %s نتیجه و %s نویسه (حذف %s قلم)",
+        strategy, len(results), original_chars, len(compacted), compact_chars, dropped,
     )
     return compacted
+
+
+def _message_role(message: Any) -> str:
+    """خواندن نقش پیام — هم برای دیکشنری و هم برای شیء SDK (ChatCompletionMessage)."""
+    if isinstance(message, dict):
+        return str(message.get("role") or "")
+    return str(getattr(message, "role", "") or "")
+
+
+def _message_size(message: Any) -> int:
+    """حجم تقریبی یک پیام به نویسه؛ برای سنجش پنجره‌ی تاریخچه‌ی مکالمه."""
+    if isinstance(message, dict):
+        return len(json.dumps(message, ensure_ascii=False, default=str))
+    dump = getattr(message, "model_dump", None)  # شیء SDK پایدانتیک
+    if callable(dump):
+        try:
+            return len(json.dumps(dump(exclude_none=True), ensure_ascii=False, default=str))
+        except (TypeError, ValueError):  # pragma: no cover — ساختار غیرمنتظره
+            pass
+    return len(str(message))
+
+
+def _messages_chars(messages: list[Any]) -> int:
+    """حجم تقریبی مجموع پیام‌های یک تاریخچه به نویسه."""
+    return sum(_message_size(message) for message in messages)
+
+
+def compact_messages_sliding(
+    messages: list[Any],
+    max_chars: int = COMPACTION_HISTORY_MAX_CHARS,
+    keep_recent: int = COMPACTION_HISTORY_MIN_MESSAGES,
+) -> list[Any]:
+    """«پنجره لغزان» روی تاریخچه‌ی مکالمه، پیش از فراخوانی بعدی مدل.
+
+    در مکالمه‌های طولانی (چند دور فراخوانی ابزار) تاریخچه بزرگ می‌شود. اینجا
+    پنجره از انتهای فهرست (تازه‌ترین پیام‌ها) شروع می‌کند و تا رسیدن به سقف
+    نویسه عقب می‌رود: پیام system همیشه می‌ماند و کمترین شمار پیام‌های آخر
+    (keep_recent) در هر حالت حفظ می‌شوند.
+
+    نکته‌ی مهم سازگاری با API: پیام ابزاری که پیام assistant صاحب آن
+    (دارای همان tool_calls) در پنجره نباشد، درخواست را نامعتبر می‌کند؛ پس اگر
+    ابتدای پنجره روی یک پیام ابزار بیفتد، پنجره یک قدم عقب‌تر می‌رود تا پیام
+    assistant مربوط هم داخل پنجره بیاید.
+    """
+    if len(messages) <= 1:
+        return list(messages)
+
+    system = [messages[0]] if _message_role(messages[0]) == "system" else []
+    body = messages[len(system):]
+    if not body:
+        return list(messages)
+
+    keep_recent = max(int(keep_recent), 1)
+    total = _messages_chars(system)
+    window_start = len(body)
+    for index in range(len(body) - 1, -1, -1):
+        size = _message_size(body[index])
+        kept_count = len(body) - index
+        if kept_count > keep_recent and total + size > max_chars:
+            break  # افزودن این پیام سقف را رد می‌کند؛ پنجره همین‌جا بسته می‌شود
+        total += size
+        window_start = index
+
+    # پیام ابزار بدون پاسخ‌دهنده‌ی مربوط، درخواست را نامعتبر می‌کند: پنجره عقب‌تر برود
+    while window_start > 0 and _message_role(body[window_start]) == "tool":
+        window_start -= 1
+
+    kept = system + body[window_start:]
+    if len(kept) < len(messages):
+        logger.info(
+            "Compaction تاریخچه (sliding): %s پیام و %s نویسه → %s پیام و %s نویسه",
+            len(messages), _messages_chars(messages), len(kept), _messages_chars(kept),
+        )
+    return kept
 
 
 def _unique_sources(sources: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -581,11 +713,12 @@ async def run_research(topic: str) -> AsyncIterator[dict[str, Any]]:
             # منابع کامل را برای نمایش و ذخیره مقاله نگه می‌داریم.
             sources.extend(results)
 
-            # Compaction: قبل از ارسال نتیجه به مدل، Context را کوچک می‌کنیم.
+            # Compaction: قبل از ارسال نتیجه به مدل، Context را با «پنجره لغزان» کوچک می‌کنیم.
             compact_results = compact_search_results(results)
             yield _step(
                 "search", DONE,
-                f"{len(results)} نتیجه دریافت شد؛ {len(compact_results)} نتیجه فشرده به مدل می‌رود",
+                f"{len(results)} نتیجه دریافت شد؛ با پنجره لغزان {len(compact_results)} نتیجه "
+                f"({_json_chars(compact_results)} نویسه) به مدل می‌رود",
             )
 
             # فقط نسخه فشرده با نقش tool به تاریخچه مکالمه اضافه می‌شود.
@@ -600,6 +733,16 @@ async def run_research(topic: str) -> AsyncIterator[dict[str, Any]]:
             )
 
         yield _step("send", DONE, f"نتیجه {len(tool_calls)} فراخوانی ابزار به مدل برگردانده شد")
+
+        # «پنجره لغزان» روی تاریخچه‌ی مکالمه: اگر پیام‌ها از سقف نویسه بگذرند،
+        # قدیمی‌ترین پیام‌ها از ابتدای پنجره بیرون می‌افتند (پیام system همیشه می‌ماند).
+        history_before = len(messages)
+        messages = compact_messages_sliding(messages)
+        if len(messages) < history_before:
+            yield _step(
+                "article", RUNNING,
+                f"تاریخچه با پنجره لغزان از {history_before} به {len(messages)} پیام کوتاه شد",
+            )
 
         # ---------- مرحله ۵: تولید مقاله بر اساس نتایج جست‌وجو ----------
         yield _step("article", RUNNING, "مدل در حال نوشتن مقاله است")
@@ -694,6 +837,14 @@ def api_health() -> dict[str, Any]:
         "base_url": OPENAI_BASE_URL or "(پیش‌فرض سرویس)",
         "search_provider": SEARCH_PROVIDER,
         "search_api_key_set": bool(SEARCH_API_KEY),
+        "compaction": {
+            "strategy": COMPACTION_STRATEGY,
+            "window": COMPACTION_WINDOW,
+            "snippet_limit": COMPACTION_SNIPPET_LIMIT,
+            "max_chars": COMPACTION_MAX_CHARS,
+            "history_max_chars": COMPACTION_HISTORY_MAX_CHARS,
+            "history_min_messages": COMPACTION_HISTORY_MIN_MESSAGES,
+        },
         "notes_dir": str(NOTES_DIR),
         "notes_dir_exists": NOTES_DIR.exists(),
     }
